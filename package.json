@@ -1,0 +1,24 @@
+{
+  "name": "dump",
+  "version": "1.0.0",
+  "description": "js functions lib",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "nodemon": "nodemon ./src -- npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ybereshc/dump.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ybereshc/dump/issues"
+  },
+  "homepage": "https://github.com/ybereshc/dump#readme",
+  "devDependencies": {
+    "jest": "^27.4.7",
+    "nodemon": "^2.0.15"
+  }
+}
