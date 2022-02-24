@@ -32,40 +32,7 @@
 	let clamp = ( v, l, h ) => v < l ? l : ( v > h ? h : v );
 	let map = ( v, l1, h1, l2, h2 ) => ( v - l1 ) * ( h2 - l2 ) / ( h1 - l1 ) + l2;
 	let loop = ( v, l, h ) => ( v = v % ( h - l ) ) + ( v < 0 ? ( v ? h : 0 ) : l );
-	let wait = ( ms ) => new Promise( resolve => setTimeout( resolve, ms ) );
-
-	let copy = ( obj ) => {
-		let res = obj;
-
-		if ( isObject( obj ) ) {
-			res = {};
-			Object.keys( obj ).forEach( key => res[ key ] = copy( obj[ key ] ) );
-		} else if ( isArray( obj ) ) {
-			res = [];
-			obj.forEach( ( val, i ) => res[ i ] = copy( val ) );
-		}
-
-		return res;
-	};
-
-	let limiter = ( limit, ary, func = ( ...args ) => args[ 0 ]( ...args ) ) => new Promise( resolve => {
-		let n = 0;
-		let done = 0;
-
-		async function next() {
-			if ( n < ary.length ) {
-				await func( ary[ n++ ], n, ary );
-				done++;
-				next();
-			} else if ( done === ary.length ) {
-				resolve();
-			}
-		}
-
-		for ( let i = 0; i < limit; i++ ) {
-			next();
-		}
-	} );
+	let delay = ( ms ) => new Promise( resolve => setTimeout( resolve, ms ) );
 
 	function createFormData( data ) {
 		let formData = data;
@@ -98,51 +65,62 @@
 
 	/* Object */
 	let _Array = {
-		forEach( func, thisArg = this ) {
+		forEach( target, func, thisArg = target ) {
 			let i = 0;
 
-			for ( let v of this ) {
-				func.call( thisArg, v, i++, this );
+			for ( let val of target ) {
+				func.call( thisArg, val, i++, target );
 			}
 		},
 
-		find( func, thisArg = this ) {
+		find( target, func, thisArg = target ) {
 			let i = 0;
 
-			for ( let v of this ) {
-				if ( func.call( thisArg, v, i++, this ) ) {
-					return v;
+			for ( let val of target ) {
+				if ( func.call( thisArg, val, i++, target ) ) {
+					return val;
 				}
 			}
 		},
 
-		filter( func, thisArg = this ) {
-			let i = 0;
+		filter( target, func, thisArg = target ) {
 			let res = [];
 
-			for ( let v of this ) {
-				if ( func.call( thisArg, v, i++, this ) ) {
-					res.push( v );
+			let i = 0;
+			for ( let val of target ) {
+				if ( func.call( thisArg, val, i++, target ) ) {
+					res.push( val );
 				}
 			}
 
 			return res;
 		},
 
-		map( func, thisArg = this ) {
-			let i = 0;
+		map( target, func, thisArg = target ) {
 			let res = [];
+			let i = 0;
 
-			for ( let v of this ) {
-				res.push( func.call( thisArg, v, i++, this ) );
+			for ( let val of target ) {
+				res.push( func.call( thisArg, val, i++, target ) );
 			}
 
 			return res;
 		},
 
-		includes( val ) {
-			for ( let v of this ) {
-				if ( v === val ) {
+		toObject( target, func, thisArg = target ) {
+			let res = [];
+			let i = 0;
+
+			for ( let val of target ) {
+				res[ func.call( thisArg, val, i++, target ) ] = val;
+			}
+
+			return res;
+		},
+
+		includes( target, data ) {
+			for ( let val of target ) {
+				if ( val === data ) {
 					return true;
 				}
 			}
@@ -153,36 +131,36 @@
 
 	/* Object */
 	let _Object = {
-		defineProperty( key, value, writable = true, enumerable = 'auto' ) {
+		defineProperty( target, key, value, writable = true, enumerable = 'auto' ) {
 			if ( enumerable === 'auto' ) {
 				enumerable = !isFunction( value );
 			}
 
-			this[ key ] = value;
+			target[ key ] = value;
 
-			Object.defineProperty( this, key, { enumerable, writable } );
-			return this;
+			Object.defineProperty( target, key, { enumerable, writable } );
+			return target;
 		},
 
-		defineReadonly( key, value, enumerable ) {
-			ObjectMethods.defineProperty( this, key, value, false, enumerable );
-			return this;
+		defineReadonly( target, key, value, enumerable ) {
+			ObjectMethods.defineProperty( target, key, value, false, enumerable );
+			return target;
 		},
 
-		defineClosure( key, get, set, enumerable = true ) {
+		defineClosure( target, key, get, set, enumerable = true ) {
 			if ( !isFunction( get ) || ( set && !isFunction( set ) ) ) {
 				throw "not a function";
 			}
 
-			Object.defineProperty( this, key, { get, set, enumerable } );
-			return this;
+			Object.defineProperty( target, key, { get, set, enumerable } );
+			return target;
 		},
 
 		merge( target, ...objects ) {
 			objects.forEach( object => {
 				Object.keys( object ).forEach( key => {
 					if ( isObject( target[ key ] ) && isObject( object[ key ] ) ) {
-						Object.merge( target[ key ], object[ key ] );
+						_Object.merge( target[ key ], object[ key ] );
 					} else {
 						target[ key ] = object[ key ];
 					}
@@ -191,6 +169,20 @@
 
 			return target;
 			
+		},
+
+		copy( target ) {
+			let res = target;
+
+			if ( isArray( target ) ) {
+				res = [];
+				target.forEach( ( val, i ) => res[ i ] = _Object.copy( val ) );
+			} else if ( isObject( target ) ) {
+				res = {};
+				Object.keys( target ).forEach( key => res[ key ] = _Object.copy( target[ key ] ) );
+			}
+
+			return res;
 		},
 	};
 
@@ -327,7 +319,7 @@
 
 		setDisabled( n = 1 ) {
 			if ( isUndefined( this.__setDisabled__count ) ) {
-				_Object.defineProperty.call( this, '__setDisabled__count', 0, true, false );
+				_Object.defineProperty( this, '__setDisabled__count', 0, true, false );
 			}
 
 			this.disabled = this.__setDisabled__count += n;
@@ -543,6 +535,102 @@
 
 
 
+	function Limiter( limit = 1, func ) {
+		let queue = [];
+		let i = 0;
+
+		let run = () => {
+			while ( i < limit && i < queue.length ) {
+				next();
+			}
+		};
+
+		let next = async () => {
+			i++;
+
+			let { func, args, res } = queue.shift();
+			res( await func( ...args ) );
+
+			i--;
+
+			run();
+		};
+
+		this.setLimit = ( newLimit = 1 ) => ( limit = newLimit, run() );
+		this.push = ( ...args ) => new Promise( res => ( queue.push( { func: func || args.shift(), args, res } ), run() ) );
+	}
+
+	setExtends( Limiter );
+
+
+
+	class Fetch {
+		constructor( domain, headers ) {
+			this.domain = domain || null;
+			this.headers = headers || {};
+			this.bodyCallback = null;
+			this.responseCallback = null;
+			this.cache = {};
+		}
+
+		fetch( url, method, options, force = false ) {
+			let { bodyCallback, responseCallback } = ( options = options || {} );
+
+			delete options.bodyCallback;
+			delete options.responseCallback;
+			options.method = method || 'GET';
+			options.headers = Object.assign( {}, this.headers || {}, options.headers || {} );
+
+			if ( bodyCallback === undefined && this.bodyCallback ) {
+				options.body = this.bodyCallback( options.body );
+			} else if ( bodyCallback ) {
+				options.body = bodyCallback( options.body );
+			}
+
+			url = new URL( url, this.domain ).toString();
+
+			if ( options.method === 'GET' && !force && url in this.cache ) {
+				return this.cache[ url ];
+			}
+
+			return this.cache[ url ] = fetch( url, options ).then( res => {
+				if ( responseCallback === undefined && this.responseCallback ) {
+					res = this.responseCallback( res );
+				} else if ( responseCallback ) {
+					res = responseCallback( res );
+				}
+
+				return res;
+			} );
+		}
+
+		get( url, options = {}, force = false ) {
+			return this.fetch( url, 'GET', options, force );
+		}
+
+		post( url, options = {}, force = false ) {
+			return this.fetch( url, 'POST', options, force );
+		}
+
+		patch( url, options = {}, force = false ) {
+			return this.fetch( url, 'PATCH', options, force );
+		}
+
+		delete( url, options = {}, force = false ) {
+			return this.fetch( url, 'DELETE', options, force );
+		}
+
+		update( url, options = {}, force = false ) {
+			return this.fetch( url, 'UPDATE', options, force );
+		}
+
+		put( url, options = {}, force = false ) {
+			return this.fetch( url, 'PUT', options, force );
+		}
+	}
+
+
+
 	function Img( src, callback ) {
 		let img = new Image();
 
@@ -570,17 +658,6 @@
 			throw 'Unexpected src';
 		}
 	};
-
-
-
-	class Cookie {
-		static get( name, cookie = document.cookie ) {
-			let matches = cookie.match( new RegExp( `(?:^|; )${ name.replace(/([\.$?*|{}\(\)\[\]\\\/\+^])/g, '\\$1') }=([^;]*)` ) );
-			return matches && decodeURIComponent( matches[1] );
-		}
-	}
-
-	setExtends( Cookie );
 
 
 
@@ -649,6 +726,12 @@
 		return res;
 	}
 
+	function createPromise() {
+		let promise, resolve, reject;
+		promise = new Promise( ( res, rej ) => ( resolve = res, reject = rej ) );
+		return { promise, resolve, reject };
+	}
+
 	function arrayToObject( keys, ary ) {
 		let res = {};
 
@@ -665,20 +748,20 @@
 
 	Dump.Img = Img;
 	Dump.FileDrop = FileDrop;
+	Dump.Limiter = Limiter;
+	Dump.Fetch = Fetch;
 	Dump.EventDispatcher = EventDispatcher;
-	Dump.Cookie = Cookie;
 
 	Dump.clamp = clamp;
 	Dump.map = map;
 	Dump.loop = loop;
-	Dump.wait = wait;
-	Dump.copy = copy;
-	Dump.limiter = limiter;
+	Dump.delay = delay;
 	Dump.createFormData = createFormData;
 	Dump.debounce = debounce;
 	Dump.throttle = throttle;
 	Dump.defer = defer;
 	Dump.parseUrl = parseUrl;
+	Dump.createPromise = createPromise;
 	Dump.arrayToObject = arrayToObject;
 
 	Dump.Element = _Element;
